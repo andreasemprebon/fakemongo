@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>PokemonGo Maps</title>
+	
+	<script src="./jquery-3.1.0.min.js"></script>
+
+	<link rel="stylesheet" type="text/css" href="./semantic/dist/semantic.min.css">
+	<script src="./semantic/dist/semantic.min.js"></script>
+
+	<script src="http://maps.google.com/maps/api/js"></script>
+	<script src="./gmaps.js"></script>
+
+	<style type="text/css">
+		body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+		}
+
+		#map {
+			width: 96%;
+			margin: 2%;
+			height: 500px;
+		}
+
+		#coordinate {
+			margin: 2%;
+		}
+
+		#coordinate input[type="text"] {
+			width: 10%;
+		}
+
+		#coordinate .input {
+			margin-right: 15px;
+		}
+
+		#coordinate button {
+			margin-right: 15px;
+		}
+
+		.icon.arrow {
+			position: relative;
+			top: 5px;
+			font-size: 30px;
+		}
+
+		.velocita {
+			margin-right: 30px;
+		}
+
+	</style>
+
+</head>
+<body>
+
+	<div id="coordinate">
+		<div class="ui right labeled input">
+		  <input type="text" placeholder="Lat" name="lat" value="46.086206">
+		  <div class="ui basic label">
+		    lat
+		  </div>
+		</div>
+
+		<div class="ui right labeled input">
+		  <input type="text" placeholder="Lon" name="lon" value="11.129061">
+		  <div class="ui basic label">
+		    lon
+		  </div>
+		</div>
+
+		<button class="ui green button" id="aggiorna-da-pulsante">Aggiorna</button>
+
+		<div class="velocita ui label">
+			<i class="car icon"></i><span class="speed">0</span>
+			<span class="detail">Km/h</span>
+		</div>
+
+		<i class="arrow down icon"></i>
+		<i class="arrow up icon"></i>
+		<i class="arrow left icon"></i>
+		<i class="arrow right icon"></i>
+	</div>
+
+<div id="map"></div>
+<script>
+	var defaultCoordinate = makeCoordinates( 46.086206, 11.129061, $.now() );
+
+	function makeCoordinates(lat, lon, timestamp) {
+		return {
+			lat : lat,
+			lon : lon,
+			timestamp : timestamp
+		};
+	}
+
+	var oldCoordinates = defaultCoordinate
+	var newCoordinates = defaultCoordinate
+
+	var map = new GMaps({
+		el: '#map',
+		lat: defaultCoordinate.lat,
+		lng: defaultCoordinate.lon,
+		zoom: 20
+	});
+
+	map.addMarker({
+		lat: defaultCoordinate.lat,
+		lng: defaultCoordinate.lon,
+		title: 'Posizione Giocatore',
+		infoWindow: {
+  			content: '<p>Posizione Giocatore</p>'
+		}
+	});
+
+	var myTimer = setInterval(aggiornaVelocita, 500);
+
+	function aggiornaConLatLon(lat, lon) {
+		map.removeMarkers();
+		map.setCenter({
+			lat: lat,
+			lng: lon
+		});
+		map.addMarker({
+			lat: lat,
+			lng: lon,
+			title: 'Posizione Giocatore',
+			infoWindow: {
+	  			content: '<p>Posizione Giocatore</p>'
+			}
+		});
+
+		$.get( "createGPX.php", { lat: lat.toString(), lon: lon.toString() } );
+
+	}
+
+	$("#aggiorna-da-pulsante").click(function() {
+		var lat = parseFloat( $("input[name=lat]").val() );
+		var lon = parseFloat( $("input[name=lon]").val() );
+		aggiornaConLatLon(lat, lon);
+	});
+
+	$(document).ready(function() {
+		var incremento = 0.000002;
+		$(document).keyup(function(e) {
+			$(".arrow").removeClass("green");
+		});
+
+		$(document).keydown(function(e) {
+			var marker = map.markers[0];
+			var lat = marker.position.lat();
+			var lon = marker.position.lng();
+			$(".arrow").removeClass("green");
+			switch(e.which) {
+				case 37: // left
+					lon -= incremento;
+					$(".arrow.left").addClass("green");
+					break;
+
+				case 38: // up
+					lat += incremento;
+					$(".arrow.up").addClass("green");
+					break;
+
+				case 39: // right
+					lon += incremento;
+					$(".arrow.right").addClass("green");
+					break;
+
+				case 40: // down
+					lat -= incremento;
+					$(".arrow.down").addClass("green");
+					break;
+
+				default: return; // exit this handler for other keys
+			}
+
+			
+			aggiornaConLatLon(lat, lon);
+
+			e.preventDefault(); // prevent the default action (scroll / move caret)
+		});
+	});
+
+	function aggiornaVelocita() {
+		if ( map.markers.length == 0 ) {
+			return;
+		}
+
+		var marker 	= map.markers[0];
+		var lat 	= marker.position.lat();
+		var lon 	= marker.position.lng();
+
+		oldCoordinates = newCoordinates;
+		newCoordinates = makeCoordinates( lat, lon, $.now() );
+
+		var distance 	= getDistanceFromLatLonInMeters(oldCoordinates.lat, oldCoordinates.lon, newCoordinates.lat, newCoordinates.lon);
+		var time 		= (newCoordinates.timestamp - oldCoordinates.timestamp) / 1000.0;
+		var speed_mps 	= distance / time;
+  		var speed_kph 	= (speed_mps * 3600.0) / 1000.0;
+
+  		$(".speed").text( speed_kph.toFixed(2).toString() );
+
+	}
+	
+	function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+		var R 	 	= 6371000; // Radius of the earth in m
+		var dLat 	= deg2rad(lat2-lat1);  // deg2rad below
+		var dLon 	= deg2rad(lon2-lon1); 
+		var a 		= Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+		var c 		= 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+		var d 		= R * c; // Distance in m
+		return d;
+	}
+
+	function deg2rad(deg) {
+		return deg * (Math.PI/180)
+	}
+
+</script>
+</body>
+</html>
