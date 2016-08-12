@@ -59,14 +59,14 @@
 
 	<div id="coordinate">
 		<div class="ui right labeled input">
-		  <input type="text" placeholder="Lat" name="lat" value="46.086206">
+		  <input type="text" placeholder="Lat" name="lat" value="">
 		  <div class="ui basic label">
 		    lat
 		  </div>
 		</div>
 
 		<div class="ui right labeled input">
-		  <input type="text" placeholder="Lon" name="lon" value="11.129061">
+		  <input type="text" placeholder="Lon" name="lon" value="">
 		  <div class="ui basic label">
 		    lon
 		  </div>
@@ -87,12 +87,19 @@
 
 <div id="map"></div>
 <script>
-	var defaultCoordinate = makeCoordinates( 46.086206, 11.129061, $.now() );
+
+	var defaultCoordinate = null;
+
+	if ( typeof(Storage) !== "undefined" && localStorage.getItem("lat") != null && localStorage.getItem("lon") != null ) {
+		defaultCoordinate = makeCoordinates( localStorage.getItem("lat"), localStorage.getItem("lon"), $.now() );
+	} else {
+		defaultCoordinate = makeCoordinates( 0.0, 0.0, $.now() );
+	}
 
 	function makeCoordinates(lat, lon, timestamp) {
 		return {
-			lat : lat,
-			lon : lon,
+			lat : parseFloat( lat ),
+			lon : parseFloat( lon ),
 			timestamp : timestamp
 		};
 	}
@@ -135,6 +142,9 @@
 
 		$.get( "createGPX.php", { lat: lat.toString(), lon: lon.toString() } );
 
+		localStorage.setItem("lat", lat);
+		localStorage.setItem("lon", lon);
+
 	}
 
 	$("#aggiorna-da-pulsante").click(function() {
@@ -144,6 +154,12 @@
 	});
 
 	$(document).ready(function() {
+
+		if ( typeof(Storage) !== "undefined" && localStorage.getItem("lat") != null && localStorage.getItem("lon") != null ) {
+			$("input[name=lat]").val( localStorage.getItem("lat").toString() );
+			$("input[name=lon]").val( localStorage.getItem("lon").toString() );
+		}
+
 		var incremento = 0.000002;
 		$(document).keyup(function(e) {
 			$(".arrow").removeClass("green");
