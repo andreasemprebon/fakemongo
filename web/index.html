@@ -180,6 +180,11 @@
 
 	<div id="map"></div>
 
+	<div id="selected-marker" style="display: none;">
+		<input type="text" name="selected-marker-lat">
+		<input type="text" name="selected-marker-lon">
+	</div>
+
 <script>
 	/**
 	 * Parametri
@@ -190,14 +195,30 @@
 	 * Variabili globali
 	 */
 	var defaultCoordinate 	= null;
+	
 	var timerSpeed 			= setInterval(aggiornaVelocita, 300);
 	var timerSpeedLabel		= setInterval(aggiornaLabelVelocita, 500);
 	var speed_kph			= 0.0;
+	
 	var autopilot_path		= null;
 	var autopilot_stop		= false;
+	
 	var map 				= null;
 	var marker 				= null;
+	var markers				= [];
+	var map_markers			= [];
 	var directionsService 	= null;
+	var infowindow 			= null;
+	var markerwindow 		= null;
+
+	/**
+	 * Immagini mappa
+	 */
+	var img_player 		= "./img/player.png";
+	var img_pokestop 	= "./img/pokestop.png";
+	var img_gym			= "./img/gym.png";
+	var img_generic		= "./img/pointer.png";
+	var img_unknown		= "./img/pokeball.png";
 
 	/** 
 	 * Funzioni
@@ -254,7 +275,7 @@
 						};
 
 		this.updateDelta = function() {
-								var diff = speed_kps - this.target_speed;
+								var diff = speed_kph - this.target_speed;
 								//console.log( diff );
 								if ( Math.abs(diff) < 0.2 ) {
 									return;
@@ -263,9 +284,9 @@
 								// Se la velocità è maggiore
 								// di quella desiderata
 								if ( diff > 0.0 ) {
-									this.delta *= 0.99; //Diminuisci del 10%
+									this.delta *= 0.95; //Diminuisci del 10%
 								} else {
-									this.delta *= 1.01; //Incrementa del 10%
+									this.delta *= 1.05; //Incrementa del 10%
 								}
 							}
 	}
@@ -448,12 +469,81 @@
 		percorriRettaPuntoPerPunto( retta );
 	}
 
-	function addMarker(location) {
-		marker = new google.maps.Marker({
-			position: location,
-			map: map,
-			title: 'Posizione Giocatore'
-		});
+	function addMarker(location, type) {
+		var image = img_unknown;
+		var title = 'unknown';
+
+		if ( type == "player" ) {
+			
+			marker = new google.maps.Marker({
+				position: location,
+				map: map,
+				title: 'Player',
+				icon: img_player
+			});
+			return;
+
+		} else if ( type == "gym" ) {
+			image = img_gym;
+			title = "Gym";
+
+		} else if ( type == "pokestop" ) {
+			image = img_pokestop;
+			title = "Pokestop";
+		} else if ( type == "generic" ) {
+			image = img_generic;
+			title = "";
+		}
+
+		var new_marker = new google.maps.Marker({
+							position: location,
+							map: map,
+							title: title,
+							icon: image
+						});
+
+		if ( type == "unknown" ) {
+			new_marker.addListener('click', function() {
+				infowindow.open(map, new_marker);
+			});
+		} else {
+			new_marker.addListener('click', function(event) {
+				console.log(event);
+				$("input[name=selected-marker-lat]").val( event.latLng.lat().toString() );
+				$("input[name=selected-marker-lon]").val( event.latLng.lng().toString() );
+				markerwindow.open(map, new_marker);
+			});
+		}
+
+		markers.push( {	lat 	: new_marker.position.lat(),
+						lon 	: new_marker.position.lng(),
+						type 	: type	 } );
+
+		map_markers.push( new_marker );
+
+		localStorage.setItem("markers", JSON.stringify(markers));
+	}
+
+	function updateUnknownMarker( new_type ) {
+		console.log( new_type );
+		for (var i = 0; i < markers.length; i++) {
+			var current = markers[i];
+
+			if ( current.type == "unknown" ) {
+				removeMarker( i );
+				addMarker({lat: current.lat, lng: current.lon}, new_type);
+				return;
+			}
+		}
+	}
+
+	function removeMarker( index ) {
+		if ( index < markers.length && index >= 0) {
+			map_markers[index].setMap( null );
+			markers.splice(index, 1);
+			map_markers.splice(index, 1);
+			localStorage.setItem("markers", JSON.stringify(markers));
+		}
 	}
 
 	/**
@@ -480,9 +570,43 @@
 			mapTypeId	: 'roadmap',
 		});
 
-		addMarker( {lat: defaultCoordinate.lat, lng: defaultCoordinate.lon} );
+		addMarker( {lat: defaultCoordinate.lat, lng: defaultCoordinate.lon}, "player" );
+
+		map.addListener('click', function(event) {
+			addMarker(event.latLng, "unknown");
+		});
+
+		var contentString = '<button class="ui blue button" 	id="aggiungi-palestra">Add Gym</button>' + 
+							'<button class="ui green button" 	id="aggiungi-pokestop">Add Pokestop</button>' +
+							'<button class="ui gray button" 	id="aggiungi-generic">Add Generic</button>';
+
+		var contentMarkerWindow = 	'<button class="ui red button" 	id="rimuovi-marker">Remove</button>' + 
+									'<button class="ui blue button" id="raggiungi-marker">Reach</button>';
+
+		infowindow = new google.maps.InfoWindow({
+						content: contentString,
+						maxWidth: 200
+					});
+
+		markerwindow = new google.maps.InfoWindow({
+						content: contentMarkerWindow,
+						maxWidth: 200
+					});
 
 		directionsService = new google.maps.DirectionsService;
+
+		if ( localStorage.getItem("markers") != null ) {
+			var tmp_markers = JSON.parse( localStorage.getItem("markers") );
+
+			for (var i = 0; i < tmp_markers.length; i++) {
+
+				var current = tmp_markers[i];
+				console.log(tmp_markers);
+				if ( current.type != "unknown" ) {
+					addMarker({lat: current.lat, lng: current.lon}, current.type);
+				}
+			}
+		}
 	}
 
 	$(document).ready(function() {
@@ -523,6 +647,51 @@
 			$("#show-autopilot").show();
 			$('#autopilot-progress').hide();
 			stopAutopilota();
+		});
+
+		/** 
+		 * Azioni per marker
+		 */
+		$(document).on('click','#aggiungi-palestra', function(e) {
+			updateUnknownMarker("gym");
+		});
+
+		$(document).on('click','#aggiungi-pokestop', function(e) {
+			updateUnknownMarker("pokestop");
+		});
+
+		$(document).on('click','#aggiungi-generic', function(e) {
+			updateUnknownMarker("generic");
+		});
+
+		$(document).on('click', '#rimuovi-marker', function (e) {
+			var marker_lat 	= parseFloat( $("input[name=selected-marker-lat]").val() );
+			var marker_lon 	= parseFloat( $("input[name=selected-marker-lon]").val() );
+			
+			for (var i = 0; i < markers.length; i++) {
+				
+				if ( markers[i].lat == marker_lat && markers[i].lon == marker_lon ) {
+					removeMarker( i );
+					console.log("rimuovo" + i.toString());
+					return;
+				}
+			}
+		});
+
+		$(document).on('click', '#raggiungi-marker', function (e) {
+			var marker_lat 	= parseFloat( $("input[name=selected-marker-lat]").val() );
+			var marker_lon 	= parseFloat( $("input[name=selected-marker-lon]").val() );
+			
+			for (var i = 0; i < markers.length; i++) {
+				
+				if ( markers[i].lat == marker_lat && markers[i].lon == marker_lon ) {
+					
+					$("input[name=autopilot-end-lat]").val( $("input[name=selected-marker-lat]").val() );
+					$("input[name=autopilot-end-lon]").val( $("input[name=selected-marker-lon]").val() );
+					$("#show-autopilot").click();
+					return;
+				}
+			}
 		});
 
 		$(document).keyup(function(e) {
