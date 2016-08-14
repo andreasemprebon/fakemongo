@@ -8,7 +8,7 @@
 	<link rel="stylesheet" type="text/css" href="./semantic/dist/semantic.min.css">
 	<script src="./semantic/dist/semantic.min.js"></script>
 
-	<script src="http://maps.google.com/maps/api/js"></script>
+	<script src="http://maps.google.com/maps/api/js?key=AIzaSyDBmf7tfwnwM_-l_z9PW8ZW1oKtVoMUDqE&region=IT"></script>
 	<script src="./gmaps.js"></script>
 
 	<style type="text/css">
@@ -23,7 +23,7 @@
 		#map {
 			width: 96%;
 			margin: 2%;
-			height: 500px;
+			height: 60%;
 		}
 
 		#coordinate {
@@ -52,6 +52,22 @@
 			margin-right: 30px;
 		}
 
+		.autopilot .input  {
+			margin-right: 15px;
+			width: 30%;
+			margin-top: 10px;
+			margin-bottom: 10px;
+		}
+
+		.autopilot p {
+			margin: 0;
+			font-weight: bold;
+		}
+
+		.autopilot .button {
+			margin-top: 15px;
+		}
+
 	</style>
 
 </head>
@@ -59,20 +75,23 @@
 
 	<div id="coordinate">
 		<div class="ui right labeled input">
-		  <input type="text" placeholder="Lat" name="lat" value="">
-		  <div class="ui basic label">
-		    lat
-		  </div>
+			<input type="text" placeholder="Lat" name="lat" value="">
+				<div class="ui basic label">
+					lat
+				</div>
 		</div>
 
 		<div class="ui right labeled input">
-		  <input type="text" placeholder="Lon" name="lon" value="">
-		  <div class="ui basic label">
-		    lon
-		  </div>
+			<input type="text" placeholder="Lon" name="lon" value="">
+				<div class="ui basic label">
+					lon
+			</div>
 		</div>
 
-		<button class="ui green button" id="aggiorna-da-pulsante">Aggiorna</button>
+		<button class="ui green button" id="aggiorna-da-pulsante">Refresh</button>
+
+		<button class="ui blue button" id="show-autopilot">Show Autopilot</button>
+		<button class="ui red button" id="stop-autopilot" style="display: none;">Stop Autopilot</button>
 
 		<div class="velocita ui label">
 			<i class="car icon"></i><span class="speed">0</span>
@@ -83,19 +102,91 @@
 		<i class="arrow up icon"></i>
 		<i class="arrow left icon"></i>
 		<i class="arrow right icon"></i>
+
 	</div>
 
-<div id="map"></div>
+	<div class="ui modal autopilot">
+		<div class="header">Autopilot</div>
+		<div class="content">
+
+			<p>Start</p>
+
+			<div class="ui right labeled input">
+				<input type="text" placeholder="Lat" name="autopilot-start-lat" value="">
+				<div class="ui basic label">
+					lat
+				</div>
+			</div>
+
+			<div class="ui right labeled input">
+				<input type="text" placeholder="Lon" name="autopilot-start-lon" value="">
+				<div class="ui basic label">
+					lon
+				</div>
+			</div>
+
+			<br />
+
+			<p>End</p>
+
+			<div class="ui right labeled input">
+				<input type="text" placeholder="Lat" name="autopilot-end-lat" value="46.085601">
+				<div class="ui basic label">
+					lat
+				</div>
+			</div>
+
+			<div class="ui right labeled input">
+				<input type="text" placeholder="Lon" name="autopilot-end-lon" value="11.128042">
+				<div class="ui basic label">
+					lon
+				</div>
+			</div>
+
+			<br />
+
+			<p>Target speed:</p>
+
+			<div class="ui right labeled input">
+				<input type="text" placeholder="Speed" name="autopilot-speed" value="6.0">
+				<div class="ui basic label">
+					Km/h
+				</div>
+			</div>
+
+			<br />
+
+			<button class="ui labeled icon green button" id="avvia-autopilot">
+				<i class="child icon"></i>
+				Start Walking
+			</button>
+
+			<button class="ui button" id="hide-autopilot">Cancel</button>
+
+		</div>
+	</div>
+
+	<div id="map"></div>
+
 <script>
+	/**
+	 * Parametri
+	 */
+	var incremento = 0.000002;
 
-	var defaultCoordinate = null;
+	/**
+	 * Variabili globali
+	 */
+	var defaultCoordinate 	= null;
+	var timerSpeed 			= setInterval(aggiornaVelocita, 300);
+	var timerSpeedLabel		= setInterval(aggiornaLabelVelocita, 500);
+	var speed_kph			= 0.0;
+	var autopilot_path		= null;
+	var autopilot_stop		= false;
 
-	if ( typeof(Storage) !== "undefined" && localStorage.getItem("lat") != null && localStorage.getItem("lon") != null ) {
-		defaultCoordinate = makeCoordinates( localStorage.getItem("lat"), localStorage.getItem("lon"), $.now() );
-	} else {
-		defaultCoordinate = makeCoordinates( 0.0, 0.0, $.now() );
-	}
-
+	/** 
+	 * Funzioni
+	 */
 	function makeCoordinates(lat, lon, timestamp) {
 		return {
 			lat : parseFloat( lat ),
@@ -104,28 +195,68 @@
 		};
 	}
 
-	var oldCoordinates = defaultCoordinate
-	var newCoordinates = defaultCoordinate
-
-	var map = new GMaps({
-		el: '#map',
-		lat: defaultCoordinate.lat,
-		lng: defaultCoordinate.lon,
-		zoom: 20
-	});
-
-	map.addMarker({
-		lat: defaultCoordinate.lat,
-		lng: defaultCoordinate.lon,
-		title: 'Posizione Giocatore',
-		infoWindow: {
-  			content: '<p>Posizione Giocatore</p>'
+	function Retta(x1, x2, y1, y2) {
+		function makePoint(x, y) {
+			return {
+				x : parseFloat( x ),
+				y : parseFloat( y )
+			};
 		}
-	});
 
-	var myTimer = setInterval(aggiornaVelocita, 500);
+		this.inizio			= makePoint(x1, y1);
+		this.fine			= makePoint(x2, y2);
+		this.delta 			= 0.0000001 * Math.sign( this.fine.x - this.inizio.x );
+		this.pendenza		= parseFloat( ( this.fine.y - this.inizio.y ) / ( this.fine.x - this.inizio.x ) );
+		this.curr_lon		= this.inizio.x;
+		this.target_speed 	= parseFloat( $("input[name=autopilot-speed]").val() );
 
-	function aggiornaConLatLon(lat, lon) {
+		this.getNextCoord =	function() {
+								this.updateDelta();
+								this.curr_lon += this.delta;
+								return makeCoordinates( this.pendenza * ( this.curr_lon - this.inizio.x ) + this.inizio.y, this.curr_lon, $.now() );
+							};
+
+		this.getCurrentCoord =	function() {
+									var currentPoint = this.getCurrentPoint();
+									return makeCoordinates( currentPoint.y, currentPoint.x, $.now() );
+								};
+
+		this.getCurrentPoint =	function() {
+									return makePoint(this.curr_lon, this.pendenza * ( this.curr_lon - this.inizio.x ) + this.inizio.y);
+								};
+
+		this.isEnd = 	function() {
+							var current = this.getCurrentPoint();
+							
+							var dist_y 	= Math.pow( ( current.y - this.fine.y ), 2.0);
+							var dist_x 	= Math.pow( ( current.x - this.fine.x ), 2.0);
+
+							//console.log( Math.sqrt( dist_y + dist_x ) );
+							
+							return ( Math.sqrt( dist_y + dist_x ) <= Math.abs( this.delta ) * 10.0 );
+						};
+
+		this.updateDelta = function() {
+								var diff = speed_kph - this.target_speed;
+								//console.log( diff );
+								if ( Math.abs(diff) < 0.2 ) {
+									return;
+								}
+
+								// Se la velocità è maggiore
+								// di quella desiderata
+								if ( diff > 0.0 ) {
+									this.delta *= 0.9; //Diminuisci del 10%
+								} else {
+									this.delta *= 1.1; //Incrementa del 10%
+								}
+							}
+	}
+
+	function aggiornaConLatLon(lat, lon, callback, param) {
+		$("input[name=lat]").val( lat.toString() );
+		$("input[name=lon]").val( lon.toString() );
+
 		map.removeMarkers();
 		map.setCenter({
 			lat: lat,
@@ -140,17 +271,184 @@
 			}
 		});
 
-		$.get( "createGPX.php", { lat: lat.toString(), lon: lon.toString() } );
+		// Chiamo lo script php per l'aggiornamento dei dati di Xcode
+		
+		$.ajax({
+			type 	: "POST",
+			cache 	: false,
+			url		: "createGPX.php",
+			data 	: { 	
+						lat: lat.toString(),
+						lon: lon.toString()
+					  },
 
+			success : function (html) {
+						
+						if ( parseInt(html) == 0 ) {
+
+							if (callback && typeof callback === "function") {
+								if ( param ) {
+									setTimeout( function() { callback( param ); }, 50 );
+									
+								} else {
+									setTimeout( function() { callback(); }, 50 );
+								}
+							}
+
+						} else {
+							alert("Errore!");
+						}
+						//console.log( html );
+					  },
+
+			error : function (xhr, ajaxOptions, thrownError) {
+        				console.log(xhr.status);
+        				console.log(thrownError);
+        			}
+		});
+
+		// Aggiorno le variabili salvate in locale
+		// per il prossimo avvio
+		
 		localStorage.setItem("lat", lat);
 		localStorage.setItem("lon", lon);
 
 	}
 
-	$("#aggiorna-da-pulsante").click(function() {
-		var lat = parseFloat( $("input[name=lat]").val() );
-		var lon = parseFloat( $("input[name=lon]").val() );
-		aggiornaConLatLon(lat, lon);
+	function aggiornaVelocita() {
+		if ( map.markers.length == 0 ) {
+			return;
+		}
+
+		var marker 	= map.markers[0];
+		var lat 	= marker.position.lat();
+		var lon 	= marker.position.lng();
+
+		oldCoordinates = newCoordinates;
+		newCoordinates = makeCoordinates( lat, lon, $.now() );
+
+		var distance 	= getDistanceFromLatLonInMeters(oldCoordinates.lat, oldCoordinates.lon, newCoordinates.lat, newCoordinates.lon);
+		var time 		= (newCoordinates.timestamp - oldCoordinates.timestamp) / 1000.0;
+		var speed_mps 	= distance / time;
+  		speed_kph 	= (speed_mps * 3600.0) / 1000.0;
+	}
+
+	function aggiornaLabelVelocita() {
+		$(".speed").text( speed_kph.toFixed(2).toString() );
+	}
+	
+	function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+		var R 	 	= 6371000; // Radius of the earth in m
+		var dLat 	= deg2rad(lat2-lat1);  // deg2rad below
+		var dLon 	= deg2rad(lon2-lon1); 
+		var a 		= Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+		var c 		= 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+		var d 		= R * c; // Distance in m
+		return d;
+	}
+
+	function deg2rad(deg) {
+		return deg * (Math.PI/180)
+	}
+
+	function avviaAutopilota() {
+		var inizio_lat 	= parseFloat( $("input[name=autopilot-start-lat]").val() );
+		var inizio_lon 	= parseFloat( $("input[name=autopilot-start-lon]").val() );
+		var fine_lat 	= parseFloat( $("input[name=autopilot-end-lat]").val() );
+		var fine_lon 	= parseFloat( $("input[name=autopilot-end-lon]").val() );
+
+		//Ottieni le indicazioni per raggiungere il posto a
+		//piedi
+		map.getRoutes({
+			origin: 		[inizio_lat	, inizio_lon],
+			destination: 	[fine_lat	, fine_lon],
+			travelMode: 	'WALKING',
+			callback: function(e) {
+				autopilot_path = e[0].overview_path;
+				setTimeout( function() { percorriStrada(); }, 500 );	
+			}
+		});
+	}
+
+	function stopAutopilota() {
+		autopilot_stop = true;
+		autopilot_path = null;
+	}
+
+	function creaRettaStepByStep(inizio, fine) {
+		return new Retta(inizio.lng(), fine.lng(), inizio.lat(), fine.lat());
+	}
+
+	function percorriRettaPuntoPerPunto( retta ) {
+
+		if ( autopilot_stop ) {
+			autopilot_stop = false;
+			return;
+		}
+
+		if ( retta.isEnd() ) {
+			console.log("Avvio nuovo percorso.");
+			// autopilot_path.splice(0, 1): rimuovo 1 elemento da path all'indice 0
+			autopilot_path.splice(0, 1)
+			percorriStrada();
+			return;
+		}
+
+		var nextCoord = retta.getNextCoord();
+			
+		aggiornaConLatLon(nextCoord.lat, nextCoord.lon, percorriRettaPuntoPerPunto, retta);
+
+	}
+
+	function percorriStrada() {
+		console.log( autopilot_path );
+		if ( autopilot_path.length < 2 ) {
+			console.log("Percorso terminato.");
+			$("#stop-autopilot").hide();
+			$("#show-autopilot").show();
+			autopilot_path = null;
+			return;
+		}
+
+		var retta = creaRettaStepByStep(autopilot_path[0], autopilot_path[1]);
+		console.log( retta );
+		percorriRettaPuntoPerPunto( retta );
+	}
+
+	/**
+	 * Inizializzazione
+	 */
+
+	if ( typeof(Storage) !== "undefined" && localStorage.getItem("lat") != null && localStorage.getItem("lon") != null ) {
+		defaultCoordinate = makeCoordinates( localStorage.getItem("lat"), localStorage.getItem("lon"), $.now() );
+	} else {
+		defaultCoordinate = makeCoordinates( 0.0, 0.0, $.now() );
+	}
+
+	var oldCoordinates = defaultCoordinate;
+	var newCoordinates = defaultCoordinate;
+
+	/**
+	 * Creazione Mappa
+	 */
+
+	var map = new GMaps({
+		el: '#map',
+		lat: defaultCoordinate.lat,
+		lng: defaultCoordinate.lon,
+		zoom: 18
+	});
+
+	/**
+	 * Aggiunta Marker Giocatore
+	 */
+	map.addMarker({
+		lat: defaultCoordinate.lat,
+		lng: defaultCoordinate.lon,
+		title: 'Posizione Giocatore',
+		infoWindow: {
+  			content: '<p>Posizione Giocatore</p>'
+		}
 	});
 
 	$(document).ready(function() {
@@ -160,7 +458,38 @@
 			$("input[name=lon]").val( localStorage.getItem("lon").toString() );
 		}
 
-		var incremento = 0.000002;
+		/** 
+		 * Azioni
+		 */
+		$("#aggiorna-da-pulsante").click(function() {
+			var lat = parseFloat( $("input[name=lat]").val() );
+			var lon = parseFloat( $("input[name=lon]").val() );
+			aggiornaConLatLon(lat, lon, null, null);
+		});
+
+		$("#show-autopilot").click(function () {
+			$("input[name=autopilot-start-lat]").val( $("input[name=lat]").val() );
+			$("input[name=autopilot-start-lon]").val( $("input[name=lon]").val() );
+			$('.ui.modal.autopilot').modal('show');
+		});
+
+		$("#hide-autopilot").click(function () {
+			$('.ui.modal.autopilot').modal('hide');
+		});
+
+		$("#avvia-autopilot").click(function () {
+			$('.ui.modal.autopilot').modal('hide');
+			$("#stop-autopilot").show();
+			$("#show-autopilot").hide();
+			avviaAutopilota();
+		});
+
+		$("#stop-autopilot").click(function () {
+			$("#stop-autopilot").hide();
+			$("#show-autopilot").show();
+			stopAutopilota();
+		});
+
 		$(document).keyup(function(e) {
 			$(".arrow").removeClass("green");
 		});
@@ -191,50 +520,16 @@
 					$(".arrow.down").addClass("green");
 					break;
 
-				default: return; // exit this handler for other keys
+				default:
+					return;
 			}
 
 			
-			aggiornaConLatLon(lat, lon);
+			aggiornaConLatLon(lat, lon, null, null);
 
 			e.preventDefault(); // prevent the default action (scroll / move caret)
 		});
 	});
-
-	function aggiornaVelocita() {
-		if ( map.markers.length == 0 ) {
-			return;
-		}
-
-		var marker 	= map.markers[0];
-		var lat 	= marker.position.lat();
-		var lon 	= marker.position.lng();
-
-		oldCoordinates = newCoordinates;
-		newCoordinates = makeCoordinates( lat, lon, $.now() );
-
-		var distance 	= getDistanceFromLatLonInMeters(oldCoordinates.lat, oldCoordinates.lon, newCoordinates.lat, newCoordinates.lon);
-		var time 		= (newCoordinates.timestamp - oldCoordinates.timestamp) / 1000.0;
-		var speed_mps 	= distance / time;
-  		var speed_kph 	= (speed_mps * 3600.0) / 1000.0;
-
-  		$(".speed").text( speed_kph.toFixed(2).toString() );
-
-	}
-	
-	function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-		var R 	 	= 6371000; // Radius of the earth in m
-		var dLat 	= deg2rad(lat2-lat1);  // deg2rad below
-		var dLon 	= deg2rad(lon2-lon1); 
-		var a 		= Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
-		var c 		= 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-		var d 		= R * c; // Distance in m
-		return d;
-	}
-
-	function deg2rad(deg) {
-		return deg * (Math.PI/180)
-	}
 
 </script>
 </body>
