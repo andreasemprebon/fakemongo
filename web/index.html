@@ -8,9 +8,6 @@
 	<link rel="stylesheet" type="text/css" href="./semantic/dist/semantic.min.css">
 	<script src="./semantic/dist/semantic.min.js"></script>
 
-	<script src="http://maps.google.com/maps/api/js?key=AIzaSyDBmf7tfwnwM_-l_z9PW8ZW1oKtVoMUDqE&region=IT"></script>
-	<script src="./gmaps.js"></script>
-
 	<style type="text/css">
 		body {
 			width: 100%;
@@ -68,10 +65,25 @@
 			margin-top: 15px;
 		}
 
+		#autopilot-progress {
+			width: 100%;
+			position: fixed;
+			top: 0;
+			border-radius: 0;
+		}
+
+		#autopilot-progress .bar {
+			border-radius: 0;
+		}
+
 	</style>
 
 </head>
 <body>
+
+	<div class="ui tiny blue progress" id="autopilot-progress" style="display: none;">
+		<div class="bar"></div>
+	</div>
 
 	<div id="coordinate">
 		<div class="ui right labeled input">
@@ -94,7 +106,7 @@
 		<button class="ui red button" id="stop-autopilot" style="display: none;">Stop Autopilot</button>
 
 		<div class="velocita ui label">
-			<i class="car icon"></i><span class="speed">0</span>
+			<i class="child icon"></i><span class="speed">0</span>
 			<span class="detail">Km/h</span>
 		</div>
 
@@ -183,6 +195,9 @@
 	var speed_kph			= 0.0;
 	var autopilot_path		= null;
 	var autopilot_stop		= false;
+	var map 				= null;
+	var marker 				= null;
+	var directionsService 	= null;
 
 	/** 
 	 * Funzioni
@@ -209,8 +224,10 @@
 		this.pendenza		= parseFloat( ( this.fine.y - this.inizio.y ) / ( this.fine.x - this.inizio.x ) );
 		this.curr_lon		= this.inizio.x;
 		this.target_speed 	= parseFloat( $("input[name=autopilot-speed]").val() );
+		this.oldCoord 		= makeCoordinates( this.inizio.y, this.inizio.x, $.now() );
 
 		this.getNextCoord =	function() {
+								this.oldCoord = this.getCurrentCoord();
 								this.updateDelta();
 								this.curr_lon += this.delta;
 								return makeCoordinates( this.pendenza * ( this.curr_lon - this.inizio.x ) + this.inizio.y, this.curr_lon, $.now() );
@@ -237,7 +254,7 @@
 						};
 
 		this.updateDelta = function() {
-								var diff = speed_kph - this.target_speed;
+								var diff = speed_kps - this.target_speed;
 								//console.log( diff );
 								if ( Math.abs(diff) < 0.2 ) {
 									return;
@@ -246,30 +263,29 @@
 								// Se la velocità è maggiore
 								// di quella desiderata
 								if ( diff > 0.0 ) {
-									this.delta *= 0.9; //Diminuisci del 10%
+									this.delta *= 0.99; //Diminuisci del 10%
 								} else {
-									this.delta *= 1.1; //Incrementa del 10%
+									this.delta *= 1.01; //Incrementa del 10%
 								}
 							}
 	}
 
 	function aggiornaConLatLon(lat, lon, callback, param) {
+		if ( isNaN(lat) || isNaN(lon) ) {
+			alert("Errore, computazione lat e lon.");
+			if ( autopilot_path ) {
+				$("#stop-autopilot").hide();
+				$("#show-autopilot").show();
+				stopAutopilota();
+			}
+			return;
+		}
+
 		$("input[name=lat]").val( lat.toString() );
 		$("input[name=lon]").val( lon.toString() );
 
-		map.removeMarkers();
-		map.setCenter({
-			lat: lat,
-			lng: lon
-		});
-		map.addMarker({
-			lat: lat,
-			lng: lon,
-			title: 'Posizione Giocatore',
-			infoWindow: {
-	  			content: '<p>Posizione Giocatore</p>'
-			}
-		});
+		marker.setPosition({lat: lat, lng: lon});
+		map.setCenter({lat: lat, lng: lon});
 
 		// Chiamo lo script php per l'aggiornamento dei dati di Xcode
 		
@@ -296,7 +312,13 @@
 							}
 
 						} else {
-							alert("Errore!");
+							alert("Errore, impossibile comunicare con Xcode!");
+							if ( autopilot_path ) {
+								$("#stop-autopilot").hide();
+								$("#show-autopilot").show();
+								stopAutopilota();
+							}
+
 						}
 						//console.log( html );
 					  },
@@ -316,11 +338,10 @@
 	}
 
 	function aggiornaVelocita() {
-		if ( map.markers.length == 0 ) {
+		if ( !marker ) {
 			return;
 		}
 
-		var marker 	= map.markers[0];
 		var lat 	= marker.position.lat();
 		var lon 	= marker.position.lng();
 
@@ -357,15 +378,22 @@
 		var fine_lat 	= parseFloat( $("input[name=autopilot-end-lat]").val() );
 		var fine_lon 	= parseFloat( $("input[name=autopilot-end-lon]").val() );
 
-		//Ottieni le indicazioni per raggiungere il posto a
-		//piedi
-		map.getRoutes({
-			origin: 		[inizio_lat	, inizio_lon],
-			destination: 	[fine_lat	, fine_lon],
-			travelMode: 	'WALKING',
-			callback: function(e) {
-				autopilot_path = e[0].overview_path;
-				setTimeout( function() { percorriStrada(); }, 500 );	
+		directionsService.route({
+			origin		: {lat: inizio_lat, lng: inizio_lon},
+			destination	: {lat: fine_lat, 	lng: fine_lon},
+			travelMode: 'WALKING'
+		}, function(response, status) {
+			if (status === 'OK') {
+				console.log(response);
+				autopilot_path = response.routes[0].overview_path;
+
+				$('#autopilot-progress').progress('reset');
+				$('#autopilot-progress').show();
+				$('#autopilot-progress').progress({ total: autopilot_path.length });
+
+				setTimeout( function() { percorriStrada(); }, 100 );
+			} else {
+				console.log('Directions request failed due to ' + status);
 			}
 		});
 	}
@@ -388,6 +416,7 @@
 
 		if ( retta.isEnd() ) {
 			console.log("Avvio nuovo percorso.");
+			$('#autopilot-progress').progress('increment');
 			// autopilot_path.splice(0, 1): rimuovo 1 elemento da path all'indice 0
 			autopilot_path.splice(0, 1)
 			percorriStrada();
@@ -404,6 +433,10 @@
 		console.log( autopilot_path );
 		if ( autopilot_path.length < 2 ) {
 			console.log("Percorso terminato.");
+
+			$('#autopilot-progress').progress('reset');
+			$('#autopilot-progress').hide();
+
 			$("#stop-autopilot").hide();
 			$("#show-autopilot").show();
 			autopilot_path = null;
@@ -413,6 +446,14 @@
 		var retta = creaRettaStepByStep(autopilot_path[0], autopilot_path[1]);
 		console.log( retta );
 		percorriRettaPuntoPerPunto( retta );
+	}
+
+	function addMarker(location) {
+		marker = new google.maps.Marker({
+			position: location,
+			map: map,
+			title: 'Posizione Giocatore'
+		});
 	}
 
 	/**
@@ -431,25 +472,18 @@
 	/**
 	 * Creazione Mappa
 	 */
+	
+	function initMap() {
+		map = new google.maps.Map( $("#map")[0] , {
+			zoom 		: 18,
+			center 		: {lat: defaultCoordinate.lat, lng: defaultCoordinate.lon},
+			mapTypeId	: 'roadmap',
+		});
 
-	var map = new GMaps({
-		el: '#map',
-		lat: defaultCoordinate.lat,
-		lng: defaultCoordinate.lon,
-		zoom: 18
-	});
+		addMarker( {lat: defaultCoordinate.lat, lng: defaultCoordinate.lon} );
 
-	/**
-	 * Aggiunta Marker Giocatore
-	 */
-	map.addMarker({
-		lat: defaultCoordinate.lat,
-		lng: defaultCoordinate.lon,
-		title: 'Posizione Giocatore',
-		infoWindow: {
-  			content: '<p>Posizione Giocatore</p>'
-		}
-	});
+		directionsService = new google.maps.DirectionsService;
+	}
 
 	$(document).ready(function() {
 
@@ -487,6 +521,7 @@
 		$("#stop-autopilot").click(function () {
 			$("#stop-autopilot").hide();
 			$("#show-autopilot").show();
+			$('#autopilot-progress').hide();
 			stopAutopilota();
 		});
 
@@ -495,9 +530,9 @@
 		});
 
 		$(document).keydown(function(e) {
-			var marker = map.markers[0];
 			var lat = marker.position.lat();
 			var lon = marker.position.lng();
+
 			$(".arrow").removeClass("green");
 			switch(e.which) {
 				case 37: // left
@@ -532,5 +567,8 @@
 	});
 
 </script>
+
+<script src="http://maps.google.com/maps/api/js?key=AIzaSyDBmf7tfwnwM_-l_z9PW8ZW1oKtVoMUDqE&callback=initMap" async defer></script>
+
 </body>
 </html>
