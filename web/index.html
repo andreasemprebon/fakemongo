@@ -76,6 +76,13 @@
 			border-radius: 0;
 		}
 
+
+		.pulsanti-marker-unknown .button,
+		.pulsanti-marker-definito .button {
+			width: 200px;
+			margin-top: 10px;
+		}
+
 	</style>
 
 </head>
@@ -503,12 +510,18 @@
 						});
 
 		if ( type == "unknown" ) {
-			new_marker.addListener('click', function() {
+
+			// Popup per i marker che ancora non si sa cosa sono
+			new_marker.addListener('click', function(event) {
+				$("input[name=selected-marker-lat]").val( event.latLng.lat().toString() );
+				$("input[name=selected-marker-lon]").val( event.latLng.lng().toString() );
 				infowindow.open(map, new_marker);
 			});
+
 		} else {
+
+			// Popup per i marker con uno scopo
 			new_marker.addListener('click', function(event) {
-				console.log(event);
 				$("input[name=selected-marker-lat]").val( event.latLng.lat().toString() );
 				$("input[name=selected-marker-lon]").val( event.latLng.lng().toString() );
 				markerwindow.open(map, new_marker);
@@ -524,16 +537,11 @@
 		localStorage.setItem("markers", JSON.stringify(markers));
 	}
 
-	function updateUnknownMarker( new_type ) {
-		console.log( new_type );
-		for (var i = 0; i < markers.length; i++) {
-			var current = markers[i];
-
-			if ( current.type == "unknown" ) {
-				removeMarker( i );
-				addMarker({lat: current.lat, lng: current.lon}, new_type);
-				return;
-			}
+	function updateUnknownMarker( index, new_type ) {
+		if ( index < markers.length && index >= 0) {
+			var current = markers[ index ];
+			removeMarker( index );
+			addMarker({lat: current.lat, lng: current.lon}, new_type);
 		}
 	}
 
@@ -576,12 +584,17 @@
 			addMarker(event.latLng, "unknown");
 		});
 
-		var contentString = '<button class="ui blue button" 	id="aggiungi-palestra">Add Gym</button>' + 
-							'<button class="ui green button" 	id="aggiungi-pokestop">Add Pokestop</button>' +
-							'<button class="ui gray button" 	id="aggiungi-generic">Add Generic</button>';
+		var contentString = '<div class="pulsanti-marker-unknown">' + 
+								'<button class="ui orange button" 	id="aggiungi-palestra">Add Gym</button>' + 
+								'<button class="ui green button" 	id="aggiungi-pokestop">Add Pokestop</button>' +
+								'<button class="ui gray button" 	id="aggiungi-generic">Add Generic</button>' +
+								'<button class="ui blue button" 	id="raggiungi-marker">Reach</button>'
+							'</div>';
 
-		var contentMarkerWindow = 	'<button class="ui red button" 	id="rimuovi-marker">Remove</button>' + 
-									'<button class="ui blue button" id="raggiungi-marker">Reach</button>';
+		var contentMarkerWindow = 	'<div class="pulsanti-marker-definito">' + 
+										'<button class="ui red button" 	id="rimuovi-marker">Remove</button>' + 
+										'<button class="ui blue button" id="raggiungi-marker">Reach</button>' +
+									'</div>';
 
 		infowindow = new google.maps.InfoWindow({
 						content: contentString,
@@ -652,46 +665,77 @@
 		/** 
 		 * Azioni per marker
 		 */
+		function trovaMarkerSelezionato() {
+			var marker_lat 	= parseFloat( $("input[name=selected-marker-lat]").val() );
+			var marker_lon 	= parseFloat( $("input[name=selected-marker-lon]").val() );
+			
+			for (var i = 0; i < markers.length; i++) {
+				
+				if ( markers[i].lat == marker_lat && markers[i].lon == marker_lon ) {
+					return i;
+				}
+			}
+
+			return -1;
+		}
+
+
 		$(document).on('click','#aggiungi-palestra', function(e) {
-			updateUnknownMarker("gym");
+			var index = trovaMarkerSelezionato();
+
+			if ( index < 0 ) {
+				console.log("Impossibile trovare il marker selezionato.");
+				return;
+			}
+
+			updateUnknownMarker(index, "gym");
 		});
 
 		$(document).on('click','#aggiungi-pokestop', function(e) {
-			updateUnknownMarker("pokestop");
+			var index = trovaMarkerSelezionato();
+
+			if ( index < 0 ) {
+				console.log("Impossibile trovare il marker selezionato.");
+				return;
+			}
+
+			updateUnknownMarker(index, "pokestop");
 		});
 
 		$(document).on('click','#aggiungi-generic', function(e) {
-			updateUnknownMarker("generic");
+			var index = trovaMarkerSelezionato();
+
+			if ( index < 0 ) {
+				console.log("Impossibile trovare il marker selezionato.");
+				return;
+			}
+
+			updateUnknownMarker(index, "generic");
 		});
 
 		$(document).on('click', '#rimuovi-marker', function (e) {
-			var marker_lat 	= parseFloat( $("input[name=selected-marker-lat]").val() );
-			var marker_lon 	= parseFloat( $("input[name=selected-marker-lon]").val() );
-			
-			for (var i = 0; i < markers.length; i++) {
-				
-				if ( markers[i].lat == marker_lat && markers[i].lon == marker_lon ) {
-					removeMarker( i );
-					console.log("rimuovo" + i.toString());
-					return;
-				}
+			var index = trovaMarkerSelezionato();
+
+			if ( index < 0 ) {
+				console.log("Impossibile trovare il marker selezionato.");
+				return;
 			}
+			
+			removeMarker( index );
 		});
 
 		$(document).on('click', '#raggiungi-marker', function (e) {
-			var marker_lat 	= parseFloat( $("input[name=selected-marker-lat]").val() );
-			var marker_lon 	= parseFloat( $("input[name=selected-marker-lon]").val() );
-			
-			for (var i = 0; i < markers.length; i++) {
-				
-				if ( markers[i].lat == marker_lat && markers[i].lon == marker_lon ) {
-					
-					$("input[name=autopilot-end-lat]").val( $("input[name=selected-marker-lat]").val() );
-					$("input[name=autopilot-end-lon]").val( $("input[name=selected-marker-lon]").val() );
-					$("#show-autopilot").click();
-					return;
-				}
+			var index = trovaMarkerSelezionato();
+
+			if ( index < 0 ) {
+				console.log("Impossibile trovare il marker selezionato.");
+				return;
 			}
+			
+			$("input[name=autopilot-end-lat]").val( $("input[name=selected-marker-lat]").val() );
+			$("input[name=autopilot-end-lon]").val( $("input[name=selected-marker-lon]").val() );
+			$("#show-autopilot").click();
+
 		});
 
 		$(document).keyup(function(e) {
